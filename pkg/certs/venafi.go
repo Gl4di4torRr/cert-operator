@@ -13,6 +13,7 @@ import (
 	"github.com/Venafi/vcert/pkg/endpoint"
 	"encoding/json"
 	"fmt"
+	"github.com/openshift/api/route/v1"
 )
 
 type VenafiProvider struct {
@@ -80,6 +81,20 @@ func (p *VenafiProvider) Provision(host string, validFrom string, validFor time.
 		return KeyPair{}, NewCertError("could not connect to endpoint: " + err.Error())
 	}
 
+	route := &routev1.Route{}
+	certTex := route.Spec.TLS.certificate
+
+	thumbprint := calcThumbprint(certText)
+
+	req := &certificate.Request{}
+	req.Thumbprint = thumbprint
+	req.ChainOption = route.Spec.TLS.certificate.ChainOptionIgnore
+
+	pcc, err := c.RetrieveCertificate(req)
+	if err != nil {
+		t.Fatalf("could not retrieve certificate using thumbprint %s: %s", req.Thumbprint, err)
+	}
+
 	enrollReq := &certificate.Request{
 		Subject: pkix.Name{
 			CommonName:         host,
@@ -132,6 +147,14 @@ func (p *VenafiProvider) Provision(host string, validFrom string, validFor time.
 
 func (p *VenafiProvider) Deprovision(host string) error {
 	return nil
+}
+
+func calcThumbprint(cert string) string {
+	p, _ := pem.Decode([]byte(cert))
+	h := sha1.New()
+	h.Write(p.Bytes)
+	buf := h.Sum(nil)
+	return strings.ToUpper(fmt.Sprintf("%x", buf))
 }
 
 var pp = func(a interface{}) {
